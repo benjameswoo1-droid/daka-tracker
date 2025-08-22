@@ -16,6 +16,7 @@ var inCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		colorutil.Cyan("Clocking IN\n")
 		commitMessage := fmt.Sprintf("%s", constants.CheckInPrefix)
+
 		if err := gitops.CreateTimeCommit(commitMessage); err != nil {
 			colorutil.Red("Failed to clock in: %v\n", err)
 			os.Exit(1)

@@ -6,7 +6,6 @@ import (
 	"github.com/benjameswoo1-droid/daka-tracker/pkg/colorutil"
 	"github.com/spf13/cobra"
 	"os"
-	"strings"
 )
 
 // Parent lunch command
@@ -21,11 +20,7 @@ var lunchInCmd = &cobra.Command{
 	Short: "Record the start of a lunch break.",
 	Args:  cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		note := strings.Join(args, " ")
 		message := constants.LunchStartPrefix
-		if note != "" {
-			message += " " + note
-		}
 		if err := gitops.CreateTimeCommit(message); err != nil {
 			colorutil.Red("Failed to record lunch start: %v\n", err)
 			os.Exit(1)
@@ -40,11 +35,7 @@ var lunchOutCmd = &cobra.Command{
 	Short: "Record the end of a lunch break.",
 	Args:  cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		note := strings.Join(args, " ")
 		message := constants.LunchEndPrefix
-		if note != "" {
-			message += " " + note
-		}
 		if err := gitops.CreateTimeCommit(message); err != nil {
 			colorutil.Red("Failed to record lunch end: %v\n", err)
 			os.Exit(1)

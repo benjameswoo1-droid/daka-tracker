@@ -15,15 +15,8 @@ var outCmd = &cobra.Command{
 	Short: "Clock out of the current work session.",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		note, _ := cmd.Flags().GetString("note")
-
 		colorutil.Cyan("Clocking OUT...\n")
 		commitMessage := constants.CheckOutPrefix
-		if note != "" {
-			commitMessage += " " + note
-		} else {
-			commitMessage += " End of session."
-		}
 
 		if err := gitops.CreateTimeCommit(commitMessage); err != nil {
 			colorutil.Red("Failed to clock out: %v\n", err)
