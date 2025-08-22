@@ -17,7 +17,7 @@ import (
 // viewCmd represents the 'view' command
 var viewCmd = &cobra.Command{
 	Use:   "view",
-	Short: "Show IN, OUT, and lunch break times for each timesheet day",
+	Short: "Show IN, OUT, lunch break times, and hours worked for each timesheet day",
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := printTimesheetDailyView(); err != nil {
 			colorutil.Red("Error: %v\n", err)
@@ -57,13 +57,15 @@ func printTimesheetDailyView() error {
 	}
 
 	type dayRecord struct {
-		InCommit   *object.Commit
-		OutCommit  *object.Commit
-		LunchStart *object.Commit
-		LunchEnd   *object.Commit
+		InCommit    *object.Commit
+		OutCommit   *object.Commit
+		LunchStart  *object.Commit
+		LunchEnd    *object.Commit
+		WorkedHours time.Duration
 	}
 	records := make(map[string]*dayRecord) // key: YYYY-MM-DD
 
+	// Iterate commits and populate records
 	err = cIter.ForEach(func(c *object.Commit) error {
 		commitTime := c.Author.When.In(aestLoc)
 		dayStr := commitTime.Format("2006-01-02")
@@ -105,7 +107,27 @@ func printTimesheetDailyView() error {
 		return nil
 	}
 
-	colorutil.Cyan("Timesheet IN/OUT and lunch break times by day:\n")
+	// Calculate WorkedHours for each record
+	for _, rec := range records {
+		var worked time.Duration
+		if rec.InCommit != nil && rec.OutCommit != nil {
+			tIn := rec.InCommit.Author.When.In(aestLoc)
+			tOut := rec.OutCommit.Author.When.In(aestLoc)
+			worked = tOut.Sub(tIn)
+			// Subtract lunch break if present and valid
+			if rec.LunchStart != nil && rec.LunchEnd != nil {
+				tLunchStart := rec.LunchStart.Author.When.In(aestLoc)
+				tLunchEnd := rec.LunchEnd.Author.When.In(aestLoc)
+				lunch := tLunchEnd.Sub(tLunchStart)
+				if lunch > 0 && tLunchStart.After(tIn) && tLunchEnd.Before(tOut) {
+					worked -= lunch
+				}
+			}
+			rec.WorkedHours = worked
+		}
+	}
+
+	colorutil.Cyan("Timesheet IN/OUT, lunch break times, and total worked hours by day:\n")
 	var days []string
 	for day := range records {
 		days = append(days, day)
@@ -141,6 +163,14 @@ func printTimesheetDailyView() error {
 			colorutil.Cyan("  Lunch End  : %s (%s)\n", lunchEndTime.Format("15:04:05 MST"), strings.TrimSpace(rec.LunchEnd.Message))
 		} else {
 			colorutil.Red("  Lunch End  : Not found\n")
+		}
+		// WORKED HOURS
+		if rec.WorkedHours > 0 {
+			hours := int(rec.WorkedHours.Hours())
+			mins := int(rec.WorkedHours.Minutes()) % 60
+			colorutil.Green("  Worked     : %dh %dm\n", hours, mins)
+		} else {
+			colorutil.Red("  Worked     : Not computable\n")
 		}
 		fmt.Println()
 	}
