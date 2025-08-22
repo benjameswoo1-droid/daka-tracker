@@ -17,7 +17,7 @@ import (
 // viewCmd represents the 'view' command
 var viewCmd = &cobra.Command{
 	Use:   "view",
-	Short: "Show the earliest timesheet commit for today",
+	Short: "Show IN, OUT, and lunch break times for each timesheet day",
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := printTimesheetDailyView(); err != nil {
 			colorutil.Red("Error: %v\n", err)
@@ -56,12 +56,13 @@ func printTimesheetDailyView() error {
 		aestLoc = time.FixedZone("AEST", 10*60*60)
 	}
 
-	// Maps for each day in AEST
 	type dayRecord struct {
-		InCommit  *object.Commit
-		OutCommit *object.Commit
+		InCommit   *object.Commit
+		OutCommit  *object.Commit
+		LunchStart *object.Commit
+		LunchEnd   *object.Commit
 	}
-	records := make(map[string]*dayRecord) // key: "YYYY-MM-DD"
+	records := make(map[string]*dayRecord) // key: YYYY-MM-DD
 
 	err = cIter.ForEach(func(c *object.Commit) error {
 		commitTime := c.Author.When.In(aestLoc)
@@ -73,7 +74,6 @@ func printTimesheetDailyView() error {
 			rec = &dayRecord{}
 			records[dayStr] = rec
 		}
-
 		if strings.HasPrefix(msg, constants.CheckInPrefix) {
 			if rec.InCommit == nil || commitTime.Before(rec.InCommit.Author.When.In(aestLoc)) {
 				rec.InCommit = c
@@ -82,6 +82,16 @@ func printTimesheetDailyView() error {
 		if strings.HasPrefix(msg, constants.CheckOutPrefix) {
 			if rec.OutCommit == nil || commitTime.After(rec.OutCommit.Author.When.In(aestLoc)) {
 				rec.OutCommit = c
+			}
+		}
+		if strings.HasPrefix(msg, constants.LunchStartPrefix) {
+			if rec.LunchStart == nil || commitTime.Before(rec.LunchStart.Author.When.In(aestLoc)) {
+				rec.LunchStart = c
+			}
+		}
+		if strings.HasPrefix(msg, constants.LunchEndPrefix) {
+			if rec.LunchEnd == nil || commitTime.After(rec.LunchEnd.Author.When.In(aestLoc)) {
+				rec.LunchEnd = c
 			}
 		}
 		return nil
@@ -95,28 +105,42 @@ func printTimesheetDailyView() error {
 		return nil
 	}
 
-	colorutil.Cyan("Timesheet IN/OUT times by day:\n")
-	// Print sorted by day ascending
+	colorutil.Cyan("Timesheet IN/OUT and lunch break times by day:\n")
 	var days []string
 	for day := range records {
 		days = append(days, day)
 	}
-	// Sort days ascending
 	sort.Strings(days)
 	for _, day := range days {
 		rec := records[day]
 		fmt.Printf("Date: %s\n", day)
+		// IN
 		if rec.InCommit != nil {
 			inTime := rec.InCommit.Author.When.In(aestLoc)
-			colorutil.Green("  IN  : %s (%s)\n", inTime.Format("15:04:05 MST"), strings.TrimSpace(rec.InCommit.Message))
+			colorutil.Green("  IN         : %s (%s)\n", inTime.Format("15:04:05 MST"), strings.TrimSpace(rec.InCommit.Message))
 		} else {
-			colorutil.Red("  IN  : Not found\n")
+			colorutil.Red("  IN         : Not found\n")
 		}
+		// OUT
 		if rec.OutCommit != nil {
 			outTime := rec.OutCommit.Author.When.In(aestLoc)
-			colorutil.Green("  OUT : %s (%s)\n", outTime.Format("15:04:05 MST"), strings.TrimSpace(rec.OutCommit.Message))
+			colorutil.Green("  OUT        : %s (%s)\n", outTime.Format("15:04:05 MST"), strings.TrimSpace(rec.OutCommit.Message))
 		} else {
-			colorutil.Red("  OUT : Not found\n")
+			colorutil.Red("  OUT        : Not found\n")
+		}
+		// LUNCH START
+		if rec.LunchStart != nil {
+			lunchStartTime := rec.LunchStart.Author.When.In(aestLoc)
+			colorutil.Cyan("  Lunch Start: %s (%s)\n", lunchStartTime.Format("15:04:05 MST"), strings.TrimSpace(rec.LunchStart.Message))
+		} else {
+			colorutil.Red("  Lunch Start: Not found\n")
+		}
+		// LUNCH END
+		if rec.LunchEnd != nil {
+			lunchEndTime := rec.LunchEnd.Author.When.In(aestLoc)
+			colorutil.Cyan("  Lunch End  : %s (%s)\n", lunchEndTime.Format("15:04:05 MST"), strings.TrimSpace(rec.LunchEnd.Message))
+		} else {
+			colorutil.Red("  Lunch End  : Not found\n")
 		}
 		fmt.Println()
 	}
