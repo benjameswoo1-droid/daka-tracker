@@ -23,3 +23,7 @@ var inCmd = &cobra.Command{
 		colorutil.Green("Successfully clocked IN!\n")
 	},
 }
+
+func init() {
+	rootCmd.AddCommand(inCmd)
+}
