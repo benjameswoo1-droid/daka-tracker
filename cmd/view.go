@@ -6,6 +6,7 @@ import (
 	"github.com/benjameswoo1-droid/daka-tracker/pkg/colorutil"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,12 +15,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// viewCmd represents the 'view' command
+var initialFlex float64
+
 var viewCmd = &cobra.Command{
 	Use:   "view",
-	Short: "Show IN, OUT, lunch break times, and hours worked for each timesheet day",
+	Short: "Show IN, OUT, lunch break times, hours worked, flex, and set initial flex for each day",
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := printTimesheetDailyView(); err != nil {
+		// Read INITIAL_FLEX from .env if flag not set
+		if !cmd.Flags().Changed("initial-flex") {
+			envFlex := os.Getenv("INITIAL_FLEX")
+			if envFlex != "" {
+				val, err := strconv.ParseFloat(envFlex, 64)
+				if err == nil {
+					initialFlex = val
+				}
+			}
+		}
+		if err := printTimesheetDailyView(initialFlex); err != nil {
 			colorutil.Red("Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -27,10 +39,11 @@ var viewCmd = &cobra.Command{
 }
 
 func init() {
+	viewCmd.Flags().Float64Var(&initialFlex, "initial-flex", 0, "Set initial flex in hours (default 0, or from .env INITIAL_FLEX)")
 	rootCmd.AddCommand(viewCmd)
 }
 
-func printTimesheetDailyView() error {
+func printTimesheetDailyView(initialFlex float64) error {
 	repoPath := os.Getenv("TIMESHEET_REPO_PATH")
 	if repoPath == "" {
 		return fmt.Errorf("TIMESHEET_REPO_PATH environment variable is not set")
@@ -56,16 +69,21 @@ func printTimesheetDailyView() error {
 		aestLoc = time.FixedZone("AEST", 10*60*60)
 	}
 
+	const standardDayHours = 7.5
+
 	type dayRecord struct {
-		InCommit    *object.Commit
-		OutCommit   *object.Commit
-		LunchStart  *object.Commit
-		LunchEnd    *object.Commit
-		WorkedHours time.Duration
+		InCommit       *object.Commit
+		OutCommit      *object.Commit
+		LunchStart     *object.Commit
+		LunchEnd       *object.Commit
+		WorkedHours    time.Duration
+		Flex           time.Duration
+		CumulativeFlex time.Duration
 	}
+
 	records := make(map[string]*dayRecord) // key: YYYY-MM-DD
 
-	// Iterate commits and populate records
+	// Collect commits and populate per-day record
 	err = cIter.ForEach(func(c *object.Commit) error {
 		commitTime := c.Author.When.In(aestLoc)
 		dayStr := commitTime.Format("2006-01-02")
@@ -107,13 +125,22 @@ func printTimesheetDailyView() error {
 		return nil
 	}
 
-	// Calculate WorkedHours for each record
-	for _, rec := range records {
-		var worked time.Duration
+	// Get sorted list of days for ordered output
+	var days []string
+	for day := range records {
+		days = append(days, day)
+	}
+	sort.Strings(days)
+
+	// Calculate worked and flex hours
+	cumulative := time.Duration(initialFlex * float64(time.Hour))
+	for _, day := range days {
+		rec := records[day]
+		// Calculate worked hours
 		if rec.InCommit != nil && rec.OutCommit != nil {
 			tIn := rec.InCommit.Author.When.In(aestLoc)
 			tOut := rec.OutCommit.Author.When.In(aestLoc)
-			worked = tOut.Sub(tIn)
+			worked := tOut.Sub(tIn)
 			// Subtract lunch break if present and valid
 			if rec.LunchStart != nil && rec.LunchEnd != nil {
 				tLunchStart := rec.LunchStart.Author.When.In(aestLoc)
@@ -124,15 +151,16 @@ func printTimesheetDailyView() error {
 				}
 			}
 			rec.WorkedHours = worked
+			rec.Flex = worked - time.Duration(standardDayHours*float64(time.Hour))
 		}
+		// Calculate cumulative flex, starting from initial flex
+		rec.CumulativeFlex = cumulative + rec.Flex
+		cumulative = rec.CumulativeFlex
 	}
 
-	colorutil.Cyan("Timesheet IN/OUT, lunch break times, and total worked hours by day:\n")
-	var days []string
-	for day := range records {
-		days = append(days, day)
-	}
-	sort.Strings(days)
+	// Print report
+	colorutil.Cyan("Timesheet IN/OUT, lunch breaks, worked hours, flex, and cumulative flex by day:\n")
+	fmt.Printf("Initial Flex: %.2f hours\n\n", initialFlex)
 	for _, day := range days {
 		rec := records[day]
 		fmt.Printf("Date: %s\n", day)
@@ -164,11 +192,23 @@ func printTimesheetDailyView() error {
 		} else {
 			colorutil.Red("  Lunch End  : Not found\n")
 		}
-		// WORKED HOURS
+		// WORKED HOURS, FLEX, CUMULATIVE FLEX
 		if rec.WorkedHours > 0 {
 			hours := int(rec.WorkedHours.Hours())
 			mins := int(rec.WorkedHours.Minutes()) % 60
 			colorutil.Green("  Worked     : %dh %dm\n", hours, mins)
+
+			flexHours := int(rec.Flex.Hours())
+			flexMins := int(rec.Flex.Minutes()) % 60
+			if rec.Flex < 0 {
+				colorutil.Red("  Flex       : %dh %dm\n", flexHours, flexMins)
+			} else {
+				colorutil.Green("  Flex       : +%dh %dm\n", flexHours, flexMins)
+			}
+
+			cumHours := int(rec.CumulativeFlex.Hours())
+			cumMins := int(rec.CumulativeFlex.Minutes()) % 60
+			colorutil.Cyan("  Cum. Flex  : %+dh %dm\n", cumHours, cumMins)
 		} else {
 			colorutil.Red("  Worked     : Not computable\n")
 		}

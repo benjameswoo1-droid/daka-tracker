@@ -16,7 +16,7 @@ var lunchCmd = &cobra.Command{
 
 // lunch in
 var lunchInCmd = &cobra.Command{
-	Use:   "in [optional note]",
+	Use:   "in",
 	Short: "Record the start of a lunch break.",
 	Args:  cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -31,7 +31,7 @@ var lunchInCmd = &cobra.Command{
 
 // lunch out
 var lunchOutCmd = &cobra.Command{
-	Use:   "out [optional note]",
+	Use:   "out",
 	Short: "Record the end of a lunch break.",
 	Args:  cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {

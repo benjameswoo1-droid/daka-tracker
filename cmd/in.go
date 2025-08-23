@@ -11,7 +11,7 @@ import (
 
 // inCmd represents the 'in' command
 var inCmd = &cobra.Command{
-	Use:   "in [task description]",
+	Use:   "in",
 	Short: "Clock in for a new work session.",
 	Run: func(cmd *cobra.Command, args []string) {
 		colorutil.Cyan("Clocking IN\n")
