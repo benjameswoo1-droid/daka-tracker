@@ -79,6 +79,7 @@ func printTimesheetDailyView(initialFlex float64) error {
 		WorkedHours    time.Duration
 		Flex           time.Duration
 		CumulativeFlex time.Duration
+		IsSickLeave    bool
 	}
 
 	records := make(map[string]*dayRecord) // key: YYYY-MM-DD
@@ -93,6 +94,9 @@ func printTimesheetDailyView(initialFlex float64) error {
 		if !ok {
 			rec = &dayRecord{}
 			records[dayStr] = rec
+		}
+		if strings.HasPrefix(msg, constants.SickLeavePrefix) {
+			rec.IsSickLeave = true
 		}
 		if strings.HasPrefix(msg, constants.CheckInPrefix) {
 			if rec.InCommit == nil || commitTime.Before(rec.InCommit.Author.When.In(aestLoc)) {
@@ -136,6 +140,13 @@ func printTimesheetDailyView(initialFlex float64) error {
 	cumulative := time.Duration(initialFlex * float64(time.Hour))
 	for _, day := range days {
 		rec := records[day]
+		// If sick leave, skip hours calculation
+		if rec.IsSickLeave {
+			rec.WorkedHours = 0
+			rec.Flex = 0
+			rec.CumulativeFlex = cumulative
+			continue
+		}
 		// Calculate worked hours
 		if rec.InCommit != nil && rec.OutCommit != nil {
 			tIn := rec.InCommit.Author.When.In(aestLoc)
@@ -159,11 +170,17 @@ func printTimesheetDailyView(initialFlex float64) error {
 	}
 
 	// Print report
-	colorutil.Cyan("Timesheet IN/OUT, lunch breaks, worked hours, flex, and cumulative flex by day:\n")
+	colorutil.Cyan("Timesheet IN/OUT, lunch breaks, worked hours, flex, cumulative flex by day:\n")
 	fmt.Printf("Initial Flex: %.2f hours\n\n", initialFlex)
 	for _, day := range days {
 		rec := records[day]
 		fmt.Printf("Date: %s\n", day)
+		// Sick Leave display
+		if rec.IsSickLeave {
+			colorutil.Cyan("  SICK LEAVE: Logged for this day\n")
+			fmt.Println()
+			continue
+		}
 		// IN
 		if rec.InCommit != nil {
 			inTime := rec.InCommit.Author.When.In(aestLoc)
